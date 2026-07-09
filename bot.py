@@ -3,16 +3,18 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
-# Данные подтягиваются автоматически из настроек Render
+# Переменные окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID") 
 CHANNEL_LINK = os.getenv("CHANNEL_LINK") 
+WEBHEADER_URL = os.getenv("KOYEB_PUBLIC_DOMAIN") # Koyeb выдаст её сам
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Функция проверки подписки
 async def is_user_subscribed(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
@@ -22,14 +24,12 @@ async def is_user_subscribed(user_id: int) -> bool:
     except Exception:
         return False
 
-# Ответ на команду /start
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
-    
     if await is_user_subscribed(user_id):
         await message.answer("Спасибо за подписку! Вот ваш файл:")
-        # Ниже тестовая ссылка на PDF. Замени её на ссылку на твой Яндекс.Диск/Google Диск с файлом
+        # Ссылка на ваш лид-магнит (замени на свою)
         await message.answer_document(document="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
     else:
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -38,11 +38,9 @@ async def cmd_start(message: types.Message):
         ])
         await message.answer("Чтобы получить бесплатный файл, пожалуйста, подпишитесь на наш канал!", reply_markup=kb)
 
-# Проверка по кнопке "Я подписался"
 @dp.callback_query(lambda c: c.data == "check_sub")
 async def process_check_sub(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
-    
     if await is_user_subscribed(user_id):
         await callback_query.message.answer("Отлично! Держи свой файл:")
         await callback_query.message.answer_document(document="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
@@ -50,8 +48,16 @@ async def process_check_sub(callback_query: types.CallbackQuery):
     else:
         await callback_query.answer("Вы всё еще не подписались на канал 😢", show_alert=True)
 
-async def main():
-    await dp.start_polling(bot)
+async def on_startup(bot: Bot):
+    await bot.set_webhook(f"https://{WEBHEADER_URL}/webhook")
+
+def main():
+    dp.startup.register(on_startup)
+    app = web.Application()
+    webhook_requests_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_requests_handler.register(app, path="/webhook")
+    setup_application(app, dp, bot=bot)
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
