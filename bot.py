@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
-# ССЫЛКА НА ТВОЮ СТАТЬЮ (Вставь свою ссылку между кавычек!)
+# ССЫЛКА НА ТВОЮ СТАТЬЮ
 ARTICLE_LINK = "https://telegra.ph/Kak-vyjti-na-dohod-ot-500-000-rublej-v-mesyac-iz-doma-razbor-mehaniki-sovremennyh-cifrovyh-professij-07-07"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,18 +20,21 @@ dp = Dispatcher()
 async def is_user_subscribed(user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        print(f"Статус пользователя {user_id} в канале: {member.status}")
         if member.status in ["creator", "administrator", "member"]:
             return True
         return False
     except Exception as e:
-        print(f"Ошибка проверки подписки: {e}")
+        # Теперь мы строго блокируем доступ при ошибке и выводим её в логи Render
+        print(f"КРИТИЧЕСКАЯ ОШИБКА ПРОВЕРКИ: {e}")
         return False
 
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
+    subscribed = await is_user_subscribed(user_id)
     
-    if await is_user_subscribed(user_id):
+    if subscribed:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📖 Читать статью", url=ARTICLE_LINK)]
         ])
@@ -46,18 +49,18 @@ async def cmd_start(message: types.Message):
 @dp.callback_query(lambda c: c.data == "check_sub")
 async def process_check_sub(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
+    subscribed = await is_user_subscribed(user_id)
     
-    if await is_user_subscribed(user_id):
+    if subscribed:
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📖 Читать статью", url=ARTICLE_LINK)]
         ])
         await callback_query.message.answer("Отлично! Вот ваша ссылка на статью:", reply_markup=kb)
         await callback_query.answer()
     else:
-        await callback_query.answer("Вы всё еще не подписались на канал 😢", show_alert=True)
+        await callback_query.answer("Вы всё еще не подписались на канал или подписка не обновилась 😢", show_alert=True)
 
 async def on_startup(bot: Bot):
-    # Принудительно очищаем старые подключения и ставим вебхук от Render
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(f"{RENDER_EXTERNAL_URL}/webhook")
 
